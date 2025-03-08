@@ -2,19 +2,23 @@ import cv2
 from ultralytics import YOLO
 import pandas as pd
 import numpy as np
+import os
+from pathlib import Path
 
 
-'''
-VIDEO_PATH = '../data/video/game.mp4'
-OUTPUt_CSV = '../data/processed/player_positions.csv'
-YOLO_MODEL_PATH = 'yolov8.pt'
-'''
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+VIDEO_PATH = PROJECT_ROOT / 'data' / 'video' / "Unity VS SJ Titans.mp4"
+OUTPUT_CSV = PROJECT_ROOT / 'data' / 'processed' / 'player_positions.csv'
+YOLO_MODEL_PATH = PROJECT_ROOT / 'models' / 'yolov8n.pt'
+
 
 
 
 def load_yolo_model(model_path):
     try:
-        model = YOLO(model_path)
+        model = YOLO(str(model_path))
         print("Model loaded successfully.")
         return model
     except Exception as e:
@@ -47,7 +51,7 @@ def extract_positions(detections, timestamp):
         if cls not in [0, 32]: # assumes 0 = person , 32=basketball
             continue
         obj_type = 'player' if cls == 0 else 'ball'
-        x1, y1, x2, y2 = box.xyxy[0].cpu.tolist()
+        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().tolist()
         obj_data = {
             'timestamp': timestamp,
             'type': obj_type,
@@ -62,3 +66,43 @@ def extract_positions(detections, timestamp):
         objects.append(obj_data)
 
     return objects
+
+def process_video(model, video_path, output_csv):
+    cap, fps = open_video(video_path)
+    frame_data = []
+    frame_count = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("End of video or error reading frame.")
+            break
+
+        timestamp = frame_count / fps
+
+        detections = detect_objects(model, frame)
+        if detections:
+            positions = extract_positions(detections, timestamp)
+            frame_data.extend(positions)
+
+        frame_count += 1
+    cap.release()
+    return frame_data
+
+def save_to_csv(frame_data, output_csv_path):
+    df = pd.DataFrame(frame_data)
+    df.to_csv(output_csv_path, index=False)
+    print(f"Data successfully saved to {output_csv_path}")
+
+
+def main():
+    model = load_yolo_model(YOLO_MODEL_PATH)
+    data = process_video(model, VIDEO_PATH, OUTPUT_CSV)
+    save_to_csv(data, OUTPUT_CSV)
+
+if __name__ == "__main__":
+    main()
+
+print(f"Project root: {PROJECT_ROOT}")
+print(VIDEO_PATH.exists())
+print(YOLO_MODEL_PATH.exists())
