@@ -25,8 +25,9 @@ def load_yolo_model(model_path):
     try:
         model = YOLO(str(model_path))
         tracker = StrongSort(
-            model_weights="osnet_x0_25_msmt17.pt", # found pretrained model Identify and remember objects using a CVV
-            device="cuda" if torch.cuda.is_available() else "cpu"
+            reid_weights=Path("osnet_x0_25_msmt17.pt"), # trained model Identify and remember objects using a CVV
+            device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+            half=False
         )
         print("Model loaded successfully.")
         return model, tracker
@@ -49,7 +50,7 @@ def open_video(video_path):
 def detect_objects(model, frame):
     results = model.predict(frame, verbose=True)[0]
     if results.boxes is None or len(results.boxes) == 0:
-        return []
+        return np.empty((0,6), dtype=np.float32)
     
     detections = []
     for box in results.boxes:
@@ -58,9 +59,9 @@ def detect_objects(model, frame):
             continue
         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().tolist()
         confidence = float(box.conf[0])
-        detections.append(([x1, y1, x2, y2], confidence, cls))
+        detections.append(([x1, y1, x2, y2, confidence, cls]))
     
-    return detections
+    return np.array(detections, dtype=np.float32)
 
 def detect_shot(ball_positions):
     # detects when a shot is taken mostlily needs to be tuned 
@@ -104,9 +105,30 @@ def extract_positions(detections, timestamp):
 
     return objects
 '''
-# draw tracking method
+# draw tracking 
+
+def draw_tracking(frame, tracked_objects):
+
+    for track in tracked_objects:
+        if not track.is_confirmed():
+            continue
+        
+
+        obj_id = track.track_id
+        x1, y1, x2, y2 = track.to_ltwh()
+        obj_type = 'player' if track.det_class == 0 else 'ball'
 
 
+        color = (0, 255, 0) if obj_type == 'player' else (255, 0, 0)
+
+        cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+
+        cv2.putText(frame, f'ID {obj_id}', (int(x1), int(y1) - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        if obj_type == "ball" and detect_shot(previous_ball_positions) == "shooting":
+            cv2.putText(frame, "SHOT ATTEMPT", (50, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
 
 def process_video(model, tracker, video_path, output_csv, output_video):
@@ -118,8 +140,8 @@ def process_video(model, tracker, video_path, output_csv, output_video):
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    fourcc = cv2.VideoWriter(str(output_video), fourcc, fps, (width, height))
-    
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(str(output_video), fourcc, fps, (width, height))
     
     frame_data = []
     frame_count = 0
@@ -136,13 +158,22 @@ def process_video(model, tracker, video_path, output_csv, output_video):
         detections = detect_objects(model, frame)
         
         # DeepSORT
-        tracked_objects = tracker.update(detections, frame)
+        if detections.shape[0] == 0:
+            tracked_objects = []
+        else:
+            tracked_objects = tracker.update(detections, frame)
 
         # draw_tracking_info
+        draw_tracking(frame, tracked_objects)
+
+        # save processed frame
+        out.write(frame)
+
+
+
+
         # tracked object positions
         for track in tracked_objects:
-            if not track.is_confirmed():
-                continue
             track_id = track.track_id
             x1, y1, x2, y2 = track.to_ltwh()
             obj_type = 'player' if track.det_class == 0 else 'ball'
@@ -153,7 +184,13 @@ def process_video(model, tracker, video_path, output_csv, output_video):
                 shot_status = detect_shot(previous_ball_positions)
             else:
                 shot_status = None
+
+            if track_id in last_positions:
+                last_x, last_y = last_positions[track_id]
+                if abs(last_x - (x1 + x2) / 2) < 5 and abs(last_y - (y1 + y2) / 2) < 5:
+                    continue
             
+            last_positions[track_id] = ((x1 + x2) / 2, (y1 + y2) / 2)
 
             obj_data = {
                             'timestamp': timestamp,
@@ -168,7 +205,12 @@ def process_video(model, tracker, video_path, output_csv, output_video):
             'shot_status': shot_status if obj_type == "ball" else None
             }
             frame_data.append(obj_data)
-
+        
+        frame_count += 1
+    
+    cap.release()
+    out.release()
+    return frame_data
 
 
 
