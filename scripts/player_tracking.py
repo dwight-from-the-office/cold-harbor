@@ -9,11 +9,11 @@ from boxmot import StrongSort
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-VIDEO_PATH = PROJECT_ROOT / 'data' / 'video' / 'Training_video.mp4'
+VIDEO_PATH = PROJECT_ROOT / 'data' / 'video' / 'Training_video_full_game.mp4'
 
 OUTPUT_CSV = PROJECT_ROOT / 'data' / 'processed' / 'player_positions.csv'
 
-OUTPUT_VIDEO = PROJECT_ROOT / 'data' / 'processed' / 'tracked_video.mp4'
+OUTPUT_VIDEO = PROJECT_ROOT / 'data' / 'processed' / 'tracked_video_full_game.mp4'
 
 YOLO_MODEL_PATH = PROJECT_ROOT / 'models' / 'yolov8n.pt'
 
@@ -27,6 +27,8 @@ def load_yolo_model(model_path):
         tracker = StrongSort(
             reid_weights=PROJECT_ROOT / "external" / "osnet_x0_25_msmt17.pt", # trained model Identify and remember objects using a CVV
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+            max_iou_dist=0.7, # increase if the same player id changes
+            max_age=50, # player disappears from frame
             half=False
         )
         print("Model loaded successfully.")
