@@ -9,7 +9,7 @@ from boxmot import StrongSort
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-VIDEO_PATH = PROJECT_ROOT / 'data' / 'video' / 'Training_video_full_game.mp4'
+VIDEO_PATH = PROJECT_ROOT / 'data' / 'video' / 'FullGame.mp4'
 
 OUTPUT_CSV = PROJECT_ROOT / 'data' / 'processed' / 'player_positions.csv'
 
